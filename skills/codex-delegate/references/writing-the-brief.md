@@ -1,14 +1,15 @@
 # Writing the brief
 
 A brief is the entire task as Codex will see it. Codex runs in a fresh process with **no memory of
-your conversation, no devdocs, and no shared context** — only the text you send and whatever it can
-read from the working tree (including the repo's own `AGENTS.md`, which it picks up automatically).
+your conversation, no access to your prior notes, and no shared context** — only the text you send and
+whatever it can read from the working tree (including the repo's own `AGENTS.md`, which it picks up
+automatically).
 If a constraint isn't in the brief or discoverable in the repo, it doesn't exist for Codex. The single
 most common failure is a brief that assumes context Codex doesn't have.
 
 ## The shape that works
 
-Codex (a GPT-5.x-class model) responds best to compact, block-structured prompts with XML tags rather
+Codex responds best to compact, block-structured prompts with XML tags rather
 than long prose. State the task, what "done" looks like, how to behave by default, and the few
 constraints that actually matter. Add a block only when the task needs it — don't ship empty ceremony.
 
@@ -63,10 +64,10 @@ naming them gets you a Codex that guesses — or skips.
 ## Honor the repo's conventions
 
 Codex reads the repo's `AGENTS.md` automatically, so house rules there (style, forbidden patterns,
-commit conventions) already apply. If the project forbids certain things in code — spec/ticket IDs in
-comments, process language like "MVP"/"for now"/"phase N", specific test conventions — restate the
-load-bearing ones in the brief too, because Codex's compliance is only as reliable as what's in front
-of it.
+commit conventions) already apply. If the project forbids certain things in code — say, spec/ticket IDs
+in comments, process language like "MVP"/"for now"/"phase N", or specific test conventions, whatever
+the repo's own conventions ban — restate the load-bearing ones in the brief too, because Codex's
+compliance is only as reliable as what's in front of it.
 
 ## One task per brief
 
@@ -76,8 +77,9 @@ run → one commit keeps review and rollback clean, and lets a later task assume
 
 ## Expect environment preamble in the reply
 
-Codex's final message may carry environment noise on top of your requested report — a memory-tool
-status line, an `AGENTS.md`-injected banner, etc. That's Codex's local setup, not a relay defect. The
+Codex's final message may carry environment noise on top of your requested report — a banner injected
+by the repo's `AGENTS.md`, extra text from an MCP tool or extension you've configured, and similar
+local additions. That comes from your own Codex setup, not a relay defect. The
 `<structured_output_contract>` is your defense: ask for a clearly delimited report section so you can
 find the real output regardless of what wraps it.
 

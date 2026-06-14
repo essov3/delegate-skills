@@ -10,7 +10,7 @@ orchestrators.
 Two gotchas, both worth 30 seconds:
 
 ```bash
-which -a codex        # more than one? a stale install (e.g. Homebrew) may shadow a current one
+command -v codex      # the active binary; a stale install (e.g. Homebrew) can shadow a current one
 codex --version       # an old binary predates `exec --json`, `-o`, and `exec resume`
 codex login status    # must be authenticated
 ```
@@ -24,11 +24,15 @@ actually ran into `result.json` — if something behaves oddly, check which bina
 node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
 ```
 
+(`<skill-dir>` is wherever this skill is installed — the folder containing its `SKILL.md`. On Claude
+Code it's the printed "Base directory for this skill"; on other orchestrators substitute that install
+path. See [`SKILL.md`](../SKILL.md) if you need to locate it.)
+
 Options:
 
 | Flag | Effect |
 | --- | --- |
-| `--brief <file>` | The brief. Omit it to read the brief from stdin (`cat brief.txt \| node relay.mjs …`). |
+| `--brief <file>` | The brief. Omit it to read the brief from stdin (`node relay.mjs … < brief.txt`). |
 | `--cd <dir>` | Working root for Codex (default: current directory). |
 | `--model <name>` | Codex model (default: Codex's own configured default). |
 | `--sandbox <mode>` | `read-only` \| `workspace-write` \| `danger-full-access` (default: `workspace-write`). |
@@ -44,14 +48,17 @@ touched-files report shows only Codex's edits and nothing of the helper's own.
 
 `<out-dir>/result.json` is the contract. Fields:
 
+- `schema` — the result-format version (currently `delegate-relay.result.v1`)
 - `status` — `completed` | `failed` | `codex_unavailable`
 - `exitCode` — mirrors Codex's exit code; `127` if `codex` isn't on PATH
 - `codexVersion` — the binary that actually ran
 - `threadId` — feed this to a later `codex exec resume <id>` (or use `--resume-last`)
 - `finalMessage` — Codex's own final report (the `<structured_output_contract>` you asked for)
-- `touchedFiles` — `git status --porcelain` lines in the working root: your review starting point
-- `eventsPath` / `finalPath` — the raw JSONL event stream and the final-message file
+- `touchedFiles` — `git status --porcelain` lines in the working root: your review starting point. `null` (not `[]`) when git can't report — `git` missing, or a non-repo run under `--skip-git-repo-check`; `[]` means git ran and the tree is clean
+- `briefPath` / `eventsPath` / `finalPath` — the exact brief relay sent, the raw JSONL event stream, and the final-message file
 - `workdir`, `sandbox`, `model`, `resumeLast`, `startedAt`, `finishedAt`
+- `stderrTail` — last ~20 stderr lines; present **only** on a failed run (a non-zero Codex exit), absent on `completed`, `codex_unavailable`, and launch failures
+- `error` — present **only** if Codex failed to launch
 
 The helper also prints a summary to stdout and exits with Codex's exit code, so a wrapping script can
 branch on success/failure directly.
@@ -62,10 +69,12 @@ The helper blocks until Codex finishes. Back it with whatever your orchestrator 
 
 - **Claude Code:** run the `Bash` call with `run_in_background: true`; you're notified on completion,
   then read `result.json`.
-- **Plain shell / other agents:** foreground for short tasks, or `node relay.mjs … &` and poll. A run
-  is done when `result.json` exists with a `status`. **But** a pre-run usage error (bad args, empty
-  brief) exits non-zero *before* writing any file — so check the exit code too, don't only watch for
-  the file.
+- **Plain shell / other agents:** foreground for short tasks, or background and poll — `node relay.mjs
+  … &` in bash/zsh (including Git Bash/WSL), or your shell's equivalent (`Start-Job` in PowerShell,
+  `start /b` in cmd). A run is done when `result.json` exists with a `status`. **But** a pre-run usage
+  error (bad args, empty brief) exits with code 2 *before* writing any file — so check the exit code
+  too, don't only watch for the file. (A missing `codex` binary exits 127 but *does* write a
+  `result.json` with status `codex_unavailable`.)
 
 Trust the working tree and the process state over any progress display. A run is finished when the
 process has exited and `result.json` is written — not when a status line says so.
@@ -98,9 +107,10 @@ Two alternatives exist if you ever want them, but the helper is the recommended 
 - **Raw `codex exec`** — fine for one-offs; you give up the captured `result.json`, touched-files
   summary, and thread-id extraction the helper does for you.
 - **The openai-codex Claude Code plugin's companion CLI** (`task`/`status`/`result`) — richer job
-  tracking if you have that plugin installed, but it depends on the plugin and its background dispatch
-  can occasionally stall a job in a `queued` state with no worker. The helper sidesteps that by running
-  in-process.
+  tracking if you have that plugin installed. It runs Codex as a background job behind a broker process,
+  so you track jobs through `queued`/`running` states; the bundled helper instead spawns `codex`
+  in-process and blocks until completion, so the only state to track is whether `result.json` exists —
+  which is why it's the default here.
 
 ## The commit boundary
 

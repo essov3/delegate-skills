@@ -52,9 +52,11 @@ If the review turns up problems, don't restate the entire brief. Continue the sa
 just the correction:
 
 ```bash
-echo "The fix is right, but the test mocks the DB session — use the real migrated fixture instead, and
+echo "The fix is right, but the test mocks the DB session - use the real migrated fixture instead, and
 drop the now-unused import." | node "<skill-dir>/scripts/relay.mjs" --resume-last --cd /path/to/repo
 ```
+
+(`<skill-dir>` is this skill's install directory — see [dispatch-and-poll.md](dispatch-and-poll.md).)
 
 `--resume-last` keeps Codex's context from the first run, so a short delta is enough. Then review
 again — rework gets the same gate-rerun and diff-read as the original, no shortcuts. Repeat until it's

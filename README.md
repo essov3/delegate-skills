@@ -6,10 +6,7 @@ Skills for **delegating coding work to a separate CLI agent and landing it yours
 orchestrator) writes a self-contained brief, hands it to an implementer CLI, then reviews the diff and
 commits — staying the reviewer the whole way.
 
-The first skill, **`codex-delegate`**, drives the OpenAI Codex CLI. A `gemini-delegate` and other
-implementers can live alongside it later — the repo name is the verb, the target agent lives in the
-skill name (mirroring how [`guard-skills`](https://github.com/amElnagdy/guard-skills) holds
-`clean-code-guard`, `test-guard`, …).
+The first skill, **`codex-delegate`**, drives the OpenAI Codex CLI.
 
 ## Install
 
@@ -42,7 +39,7 @@ The loop, for `codex-delegate`:
 1. **Write a brief** — a self-contained task spec; Codex sees only what you send.
 2. **Dispatch** it with the bundled `relay.mjs` (a thin `codex exec` wrapper).
 3. **Wait** for completion — the helper writes a structured `result.json`.
-4. **Review** the diff — re-run the project's gates yourself; pair with guard skills.
+4. **Review** the diff — re-run the project's gates yourself; pair with [guard skills](https://github.com/amElnagdy/guard-skills).
 5. **Land** it — *you* commit, because the implementer's sandbox can't reliably write `.git`.
 
 ```text
@@ -52,13 +49,13 @@ Use $codex-delegate to run this queue of migration tasks through Codex while I r
 
 ## How this differs from the OpenAI Codex plugin
 
-The official [openai-codex Claude Code plugin](https://github.com/openai/codex) is excellent and
+The official openai-codex Claude Code plugin is excellent and
 **complementary** — this skill builds on the same `codex` CLI, it doesn't replace the plugin. They
 point in different directions:
 
 - The plugin's `codex:codex-rescue` agent is a **forwarder**: it hands one task to Codex and returns
   the output. It deliberately does not poll, review, or commit.
-- The plugin's review command and stop-gate run the **inverse** direction: **Codex reviews your work**.
+- The plugin's review command and stop-review gate run the **inverse** direction: **Codex reviews your work**.
 - `codex-delegate` is the **orchestration loop in the other direction**: *you* drive Codex to
   implement across one task or a queue, and *you* review and land each result. That loop — brief →
   dispatch → poll → review → commit, with the orchestrator owning the commit — is what the plugin
@@ -81,14 +78,15 @@ the gates yourself instead of typing it all by hand.
 
 ### gemini-delegate
 
-*Planned.* A relay for the Gemini CLI, if and when it gains a comparable non-interactive mode. Reserved
-so the umbrella can grow without a rename.
+*Planned.* A delegate skill for the Gemini CLI, if and when it gains a comparable non-interactive mode.
+Reserved so the umbrella can grow without a rename.
 
 ## Requirements
 
 - The [`codex` CLI](https://github.com/openai/codex) installed and authenticated (`codex login`).
 - Node 18+ and `git`.
 - An orchestrating agent that can run shell commands and read files.
+- Shell examples assume bash/zsh (macOS/Linux, or Git Bash/WSL on Windows).
 
 ## Trust and validation
 
@@ -100,9 +98,10 @@ This package is intentionally inspectable:
   process it launches authenticates exactly as you do at the terminal. Read the script before you run it.
 - It never commits — committing is always the orchestrator's job, after review.
 
-**Verification status:** the loop is verified on Claude Code. Other shell-capable orchestrators
-(OpenCode, Cursor, …) are designed-for but not yet verified — the skill is written orchestrator-neutral
-so they should work, and that line gets upgraded to "verified" with evidence, not assumption.
+**Verification status:** the relay's `codex` integration (flags, exit codes, `result.json`) is verified;
+the end-to-end loop is designed for and run on Claude Code, but not yet formally verified across a full
+delegate → review → commit cycle. Other orchestrators (OpenCode, Cursor, …) are designed-for but
+unproven. This line gets upgraded to "verified end-to-end" with evidence, not assumption.
 
 ## Repository shape
 

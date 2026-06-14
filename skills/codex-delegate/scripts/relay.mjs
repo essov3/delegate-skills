@@ -39,7 +39,7 @@
  *
  * Result: written to <out-dir>/result.json and summarized on stdout —
  *   status, exitCode, codexVersion, threadId (for a later resume), finalMessage
- *   (Codex's own report), touchedFiles (git porcelain), and the paths to
+ *   (Codex's own report), touchedFiles (git porcelain, null if git can't report), and the paths to
  *   events.jsonl and final.txt.
  *
  * Exit codes: a pre-run usage error (bad/missing args, empty brief) exits 2
@@ -129,18 +129,25 @@ function readBrief(opts) {
 
 function codexVersion() {
   try {
-    return execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
+    // On Windows, npm installs `codex` as a .cmd shim; Node's CreateProcess only
+    // auto-appends .exe, never .cmd, so launching it needs shell:true there or it
+    // ENOENTs on a working install. POSIX is unaffected. (git installs a real
+    // git.exe and must NOT get this flag — see gitTouchedFiles.)
+    return execFileSync("codex", ["--version"], { encoding: "utf8", shell: process.platform === "win32" }).trim();
   } catch {
     return null;
   }
 }
 
 function gitTouchedFiles(cwd) {
+  // null (not []) when git can't report — git missing, or a non-repo run under
+  // --skip-git-repo-check — so the caller can tell "git unavailable" apart from
+  // "Codex changed nothing." [] means git ran and the working tree is clean.
   try {
     const out = execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
     return out.split("\n").map((line) => line.trimEnd()).filter(Boolean);
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -173,27 +180,41 @@ function extractThreadId(event) {
   );
 }
 
-function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  const brief = readBrief(opts);
-  if (!brief.trim()) fail("empty brief (pass --brief <file> or pipe the brief on stdin)");
+function recordEventLine(eventsPath, line) {
+  // Append one stdout line to the event log and pull a thread id from it when the
+  // line is a JSON event. Non-JSON progress lines (and a newline-less final line)
+  // are preserved in events.jsonl regardless; they just carry no thread id.
+  appendFileSync(eventsPath, `${line}\n`, "utf8");
+  try {
+    return extractThreadId(JSON.parse(line));
+  } catch {
+    return null;
+  }
+}
 
-  const version = codexVersion();
+function prepareRunDir(opts, brief) {
   const startedAt = new Date().toISOString();
   // Default the run dir to system temp so the repo under review stays pristine —
   // the touched-files report must show only Codex's edits, not relay's artifacts.
   const outDir = opts.outDir || join(tmpdir(), "delegate-relay", `${basename(opts.cd) || "repo"}-${timestamp()}`);
   mkdirSync(outDir, { recursive: true });
+  const run = {
+    startedAt,
+    eventsPath: join(outDir, "events.jsonl"),
+    finalPath: join(outDir, "final.txt"),
+    briefPath: join(outDir, "brief.txt"),
+    resultPath: join(outDir, "result.json"),
+  };
+  writeFileSync(run.briefPath, brief, "utf8");
+  writeFileSync(run.eventsPath, "", "utf8");
+  return run;
+}
 
-  const eventsPath = join(outDir, "events.jsonl");
-  const finalPath = join(outDir, "final.txt");
-  const briefPath = join(outDir, "brief.txt");
-  const resultPath = join(outDir, "result.json");
-  writeFileSync(briefPath, brief, "utf8");
-  writeFileSync(eventsPath, "", "utf8");
-
-  const writeResult = (extra) => {
-    const finishedAt = new Date().toISOString();
+function makeResultWriter(opts, version, run) {
+  // Returns writeResult(extra): merges the per-outcome fields onto the run's
+  // standing metadata, persists result.json, and returns the object it just
+  // wrote so the caller can hand it straight to printSummary.
+  return (extra) => {
     const result = {
       schema: "delegate-relay.result.v1",
       workdir: opts.cd,
@@ -201,26 +222,31 @@ function main() {
       model: opts.model,
       resumeLast: opts.resumeLast,
       codexVersion: version,
-      startedAt,
-      finishedAt,
-      briefPath,
-      eventsPath,
-      finalPath: existsSync(finalPath) ? finalPath : null,
+      startedAt: run.startedAt,
+      finishedAt: new Date().toISOString(),
+      briefPath: run.briefPath,
+      eventsPath: run.eventsPath,
+      finalPath: existsSync(run.finalPath) ? run.finalPath : null,
       ...extra,
     };
-    writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+    writeFileSync(run.resultPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
     return result;
   };
+}
 
-  if (!version) {
-    const result = writeResult({ status: "codex_unavailable", exitCode: 127, threadId: null, finalMessage: "", touchedFiles: [] });
-    printSummary(result, resultPath);
-    process.stderr.write("relay: `codex` not found on PATH. Install it (npm i -g @openai/codex) and run `codex login`.\n");
-    process.exit(127);
-  }
+function reportUnavailable(writeResult, resultPath) {
+  const result = writeResult({ status: "codex_unavailable", exitCode: 127, threadId: null, finalMessage: "", touchedFiles: [] });
+  printSummary(result, resultPath);
+  process.stderr.write("relay: `codex` not found on PATH. Install it (npm i -g @openai/codex) and run `codex login`.\n");
+  process.exit(127);
+}
 
-  const argv = buildArgv(opts, finalPath);
-  const child = spawn("codex", argv, { cwd: opts.cd, stdio: ["pipe", "pipe", "pipe"] });
+function dispatchToCodex(opts, brief, run, writeResult) {
+  const argv = buildArgv(opts, run.finalPath);
+  // shell:true on Windows so the codex.cmd shim resolves (see codexVersion). Safe:
+  // the brief is fed via child.stdin below — never argv — and argv holds only
+  // sandbox enums, model names, and file paths, with no shell metacharacters.
+  const child = spawn("codex", argv, { cwd: opts.cd, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
 
   let threadId = null;
   let stdoutBuf = "";
@@ -233,14 +259,8 @@ function main() {
       const line = stdoutBuf.slice(0, nl);
       stdoutBuf = stdoutBuf.slice(nl + 1);
       if (!line.trim()) continue;
-      appendFileSync(eventsPath, `${line}\n`, "utf8");
-      try {
-        const event = JSON.parse(line);
-        const tid = extractThreadId(event);
-        if (tid) threadId = tid;
-      } catch {
-        // Non-JSON progress line; it is preserved in events.jsonl regardless.
-      }
+      const tid = recordEventLine(run.eventsPath, line);
+      if (tid) threadId = tid;
     }
   });
 
@@ -255,21 +275,16 @@ function main() {
 
   child.on("error", (err) => {
     const result = writeResult({ status: "failed", exitCode: 1, threadId, finalMessage: "", touchedFiles: gitTouchedFiles(opts.cd), error: String(err && err.message ? err.message : err) });
-    printSummary(result, resultPath);
+    printSummary(result, run.resultPath);
     process.exit(1);
   });
 
   child.on("close", (code) => {
     if (stdoutBuf.trim()) {
-      appendFileSync(eventsPath, `${stdoutBuf}\n`, "utf8");
-      try {
-        const tid = extractThreadId(JSON.parse(stdoutBuf));
-        if (tid) threadId = tid;
-      } catch {
-        // A newline-less final line that isn't valid JSON; preserved in the log only.
-      }
+      const tid = recordEventLine(run.eventsPath, stdoutBuf);
+      if (tid) threadId = tid;
     }
-    const finalMessage = existsSync(finalPath) ? readFileSync(finalPath, "utf8").trim() : "";
+    const finalMessage = existsSync(run.finalPath) ? readFileSync(run.finalPath, "utf8").trim() : "";
     const result = writeResult({
       status: code === 0 ? "completed" : "failed",
       exitCode: code === null ? 1 : code,
@@ -278,7 +293,7 @@ function main() {
       touchedFiles: gitTouchedFiles(opts.cd),
       ...(code === 0 ? {} : { stderrTail: stderrTail.slice(-20) }),
     });
-    printSummary(result, resultPath);
+    printSummary(result, run.resultPath);
     process.exit(result.exitCode);
   });
 
@@ -289,16 +304,37 @@ function main() {
   child.stdin.end();
 }
 
+function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const brief = readBrief(opts);
+  if (!brief.trim()) fail("empty brief (pass --brief <file> or pipe the brief on stdin)");
+
+  const version = codexVersion();
+  const run = prepareRunDir(opts, brief);
+  const writeResult = makeResultWriter(opts, version, run);
+
+  if (!version) {
+    reportUnavailable(writeResult, run.resultPath);
+    return;
+  }
+
+  dispatchToCodex(opts, brief, run, writeResult);
+}
+
 function printSummary(result, resultPath) {
   const lines = [];
   lines.push("");
   lines.push(`relay: ${result.status} (exit ${result.exitCode})  ·  codex ${result.codexVersion ?? "?"}`);
   if (result.resumeLast) lines.push("mode: resumed most recent session");
   if (result.threadId) lines.push(`thread id (resume with: codex exec resume ${result.threadId}): ${result.threadId}`);
-  const touched = result.touchedFiles || [];
-  lines.push(`touched files: ${touched.length}`);
-  for (const file of touched.slice(0, 40)) lines.push(`  ${file}`);
-  if (touched.length > 40) lines.push(`  … and ${touched.length - 40} more`);
+  const touched = result.touchedFiles;
+  if (touched === null) {
+    lines.push("touched files: git unavailable — inspect the working tree directly");
+  } else {
+    lines.push(`touched files: ${touched.length}`);
+    for (const file of touched.slice(0, 40)) lines.push(`  ${file}`);
+    if (touched.length > 40) lines.push(`  … and ${touched.length - 40} more`);
+  }
   if (result.stderrTail && result.stderrTail.length) {
     lines.push("last stderr:");
     for (const line of result.stderrTail.slice(-8)) lines.push(`  ${line}`);
