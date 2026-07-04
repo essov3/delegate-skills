@@ -20,9 +20,9 @@ You are the **orchestrator**. This skill lets you hand a bounded coding task to 
 the brief and own the judgment; OpenCode does the typing in its own session; you verify and commit.
 
 Nothing here is specific to one orchestrating agent. The loop needs only the ability to run a shell
-command and read a file, so it works the same whether you are Claude Code, OpenCode itself driving a
-sibling session, or any comparable agent. (It is designed for and run on Claude Code; treat other
-orchestrators as designed-for, not yet proven.)
+command and read a file, so any agent with those two capabilities — Claude Code, OpenCode driving a
+sibling session, or a comparable one — can drive it. (It is designed for and run on Claude Code; treat
+other orchestrators as designed-for, not yet proven.)
 
 ## When NOT to use this
 

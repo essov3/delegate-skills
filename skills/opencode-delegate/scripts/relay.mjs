@@ -212,7 +212,10 @@ function makeEventScanner(onObject) {
         else if (ch === '"') inString = false;
         continue;
       }
-      if (ch === '"') { inString = true; continue; }
+      // Only track strings inside an object (depth > 0). At depth 0 we're skipping a
+      // junk prefix (e.g. a terminal-notify escape), and an unmatched `"` there must
+      // not swallow the real `{...}` that follows in the same chunk.
+      if (ch === '"') { if (depth > 0) inString = true; continue; }
       if (ch === "{") {
         if (depth === 0) start = i;
         depth += 1;
