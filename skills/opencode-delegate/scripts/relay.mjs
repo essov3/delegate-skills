@@ -290,7 +290,7 @@ function makeResultWriter(opts, version, run) {
 }
 
 function reportUnavailable(writeResult, resultPath) {
-  const result = writeResult({ status: "opencode_unavailable", exitCode: 127, sessionId: null, finalMessage: "", touchedFiles: [], cost: null });
+  const result = writeResult({ status: "opencode_unavailable", exitCode: 127, sessionId: null, finalMessage: "", touchedFiles: null, cost: null });
   printSummary(result, resultPath);
   process.stderr.write("relay: `opencode` not found on PATH. Install it (npm i -g opencode-ai) and run `opencode auth login`.\n");
   process.exit(127);
@@ -394,6 +394,11 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const brief = readBrief(opts);
   if (!brief.trim()) fail("empty brief (pass --brief <file> or pipe the brief on stdin)");
+  // --session pins a specific session and --resume-last picks the most recent; passing both is a
+  // contradiction, and buildArgv would silently prefer --session. Reject it rather than guess.
+  if (opts.session && opts.resumeLast) {
+    fail("--session and --resume-last are mutually exclusive; pass only one");
+  }
   // OpenCode has no safe default model (a bare `opencode run` errors), so a fresh run must name one.
   // A resumed run inherits its session's model, so --model is optional there.
   if (!opts.model && !opts.resumeLast && !opts.session) {
