@@ -20,6 +20,9 @@
  * OpenCode autonomy is governed by the chosen agent, not a sandbox enum:
  *   build (default) — write-capable; edits files in the working dir headlessly.
  *   plan            — read-only; reviews/diagnoses without touching the tree.
+ * Runs pass `--auto` by default so OpenCode never blocks on a permission prompt
+ * no one can answer in headless mode; the orchestrator's diff review is the
+ * safety net. Pass --no-auto to instead honor the agent's own permission config.
  *
  * Usage:
  *   node relay.mjs --brief <file> [options]
@@ -33,6 +36,8 @@
  *   --agent <name>          OpenCode agent (default: build). Use plan for read-only review.
  *   --read-only             Shortcut for --agent plan (review/diagnosis, no edits).
  *   --variant <name>        Provider reasoning effort (e.g. high, max, minimal).
+ *   --no-auto               Don't pass --auto; honor the agent's own permission config (a headless
+ *                           run may then hang if the agent is set to ask for a permission).
  *   --resume-last           Continue the most recent OpenCode session; send only the delta brief.
  *   --session <id>          Continue a specific session id (ses_...); send only the delta brief.
  *   --pure                  Run OpenCode without external plugins (cleaner event stream).
@@ -70,6 +75,7 @@ function parseArgs(argv) {
     model: null,
     agent: "build",
     variant: null,
+    auto: true,
     resumeLast: false,
     session: null,
     pure: false,
@@ -95,6 +101,8 @@ function parseArgs(argv) {
       case "--agent": opts.agent = next(); break;
       case "--read-only": opts.agent = "plan"; break;
       case "--variant": opts.variant = next(); break;
+      case "--auto": opts.auto = true; break;
+      case "--no-auto": opts.auto = false; break;
       case "--resume-last": opts.resumeLast = true; break;
       case "--session": opts.session = next(); break;
       case "--pure": opts.pure = true; break;
@@ -173,6 +181,9 @@ function buildArgv(opts) {
   }
   if (opts.model) argv.push("--model", opts.model);
   if (opts.variant) argv.push("--variant", opts.variant);
+  // --auto (on by default) auto-approves permissions so a headless run doesn't
+  // block on a prompt no one can answer; --no-auto honors the agent's own config.
+  if (opts.auto) argv.push("--auto");
   // No message argument: the brief is piped on stdin (see dispatchToOpenCode),
   // which avoids all argv-quoting issues with multi-line, XML-tagged briefs.
   return argv;
@@ -258,6 +269,7 @@ function makeResultWriter(opts, version, run) {
       workdir: opts.cd,
       agent: resuming ? "(inherited from resumed session)" : opts.agent,
       model: opts.model,
+      auto: opts.auto,
       resumeLast: opts.resumeLast,
       opencodeVersion: version,
       startedAt: run.startedAt,

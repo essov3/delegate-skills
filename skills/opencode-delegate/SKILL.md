@@ -141,6 +141,12 @@ OpenCode's autonomy is governed by the **agent**, not a sandbox enum:
 - **`plan`** (via `--read-only`) — read-only; reviews and diagnoses without touching the tree. The
   equivalent of "let it look but not edit."
 
+Permissions **auto-approve by default**: the relay passes `--auto` so a headless run never blocks on a
+prompt no one can answer. That is the point of unattended delegation — the orchestrator's diff review
+and the implementer sweep (step 4) are the safety net, not a per-action prompt. Pass `--no-auto` to
+honor the agent's own permission config instead (allow/ask/deny per action); pair it with an agent whose
+in-workspace permissions are set to *allow*, or a headless run can hang waiting on an `ask`.
+
 ## Authorization model
 
 Delegation is something the human opts into. Once they have ("run this queue", "proceed"), committing
