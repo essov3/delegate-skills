@@ -168,11 +168,6 @@ function timestamp() {
 
 function buildArgv(opts) {
   const argv = ["run", "--format", "json"];
-  // Pin the working root explicitly. spawn() below sets the child's cwd, but
-  // OpenCode can resolve its project root from the inherited PWD env (which spawn
-  // does NOT rewrite), so without --dir a run may operate on the orchestrator's
-  // directory instead of opts.cd — and with --auto on, edit it unattended.
-  argv.push("--dir", opts.cd);
   if (opts.pure) argv.push("--pure");
   // Resume continues an existing session; --session pins a specific id, otherwise
   // --continue picks up the most recent one. A resumed run inherits its original
@@ -303,11 +298,22 @@ function reportUnavailable(writeResult, resultPath) {
 
 function dispatchToOpenCode(opts, brief, run, writeResult) {
   const argv = buildArgv(opts);
+  // Pin the working root two ways: `cwd` sets the child's real directory, and PWD
+  // is set explicitly because OpenCode can resolve its project root from the
+  // inherited PWD env — which spawn does NOT rewrite — so without it a run could
+  // operate on the orchestrator's directory instead of opts.cd (and, with --auto
+  // on, edit it unattended). Passing the path via env, not argv, keeps it clear of
+  // shell quoting.
   // shell:true on Windows so the opencode.cmd shim resolves (see opencodeVersion).
   // Safe: the brief is fed via child.stdin below — never argv — and argv holds only
   // flag names, an agent enum, a model string, and a session id, with no shell
-  // metacharacters.
-  const child = spawn("opencode", argv, { cwd: opts.cd, stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
+  // metacharacters or spaceable paths.
+  const child = spawn("opencode", argv, {
+    cwd: opts.cd,
+    env: { ...process.env, PWD: opts.cd },
+    stdio: ["pipe", "pipe", "pipe"],
+    shell: process.platform === "win32",
+  });
 
   let sessionId = opts.session || null;
   let totalCost = 0;

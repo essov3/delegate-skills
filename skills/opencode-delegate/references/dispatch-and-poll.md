@@ -18,7 +18,7 @@ opencode auth list     # at least one provider credential must be present
 ## Dispatching
 
 ```bash
-node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --cd /path/to/repo
+node "<skill-dir>/scripts/relay.mjs" --brief brief.txt --model <provider/model> --cd /path/to/repo
 ```
 
 (`<skill-dir>` is wherever this skill is installed — the folder containing its `SKILL.md`. On Claude
