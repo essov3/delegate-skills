@@ -159,7 +159,12 @@ function timestamp() {
 function buildArgv(opts, finalPath) {
   const argv = ["exec"];
   if (opts.resumeLast) argv.push("resume", "--last");
-  argv.push("--json", "-o", finalPath);
+  // ponytail: shell:true on win32 (needed for the codex.cmd shim) doesn't quote
+  // args, so a temp path with spaces (C:\Users\First Last\...) splits and the
+  // trailing "-" misparses (issue #3). Quote the only spaceable arg in argv.
+  // Ceiling: if quoting proves too blunt, drop shell:true and resolve the shim.
+  const outPath = process.platform === "win32" ? `"${finalPath}"` : finalPath;
+  argv.push("--json", "-o", outPath);
   // `-s`/`-C` are not accepted by `exec resume`; resume inherits the original
   // session's sandbox and working root, and we set the child process cwd below.
   if (!opts.resumeLast) {
